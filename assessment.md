@@ -32,31 +32,31 @@ B - False
 
 ---
 
-Q4: Which Railway CLI command is used to trigger a deployment in CircleCI?
+Q4: In this lesson's pipeline, what does the deploy job do?
 
-A - railway deploy
+A - Builds the Docker image again from the source code
 
-B - railway start
+B - Asks the cloud platform to redeploy the service, which then pulls the latest image from Docker Hub
 
-C - railway up
+C - Uploads the source code to the cloud platform
 
-D - railway push
-
----
-
-Q5: What are the three Railway credentials needed in CircleCI environment variables for automated deployment?
-
-A - Username, password, email
-
-B - API token, project ID, service ID
-
-C - Access key, secret key, region
-
-D - Client ID, client secret, tenant ID
+D - Runs the tests again on the cloud platform
 
 ---
 
-Q6: Railway requires a credit card to sign up, even for the free tier with $5 monthly credit?
+Q5: Why do we create the service from the Docker image instead of connecting the platform to our GitHub repository?
+
+A - Deploying from GitHub is not supported by Render or Railway
+
+B - So that only CircleCI decides when to deploy - after the tests have passed
+
+C - Docker images are always smaller than source code
+
+D - So that we don't need a Dockerfile
+
+---
+
+Q6: Render and Railway automatically deploy a new `latest` image as soon as it is pushed to Docker Hub, so the deploy job is optional?
 
 A - True
 
@@ -84,7 +84,7 @@ B - False
 
 ---
 
-Q9: What is the primary benefit of using environment variables for Railway credentials in CircleCI?
+Q9: What is the primary benefit of storing deploy credentials (such as a Railway token or a Render deploy hook URL) in CircleCI environment variables?
 
 A - Faster deployment
 
@@ -96,7 +96,7 @@ D - Easier to remember
 
 ---
 
-Q10: When you push code to GitHub, a complete CI/CD pipeline with Railway deployment typically takes how long from push to production?
+Q10: When you push code to GitHub, a complete CI/CD pipeline with deployment to a cloud platform typically takes how long from push to production?
 
 A - 30-60 seconds
 

@@ -49,14 +49,14 @@ No video for this task. Complete the following before class to save time during 
 
 1. Verify your CircleCI pipeline for devops-demo is working — go to [https://app.circleci.com](https://app.circleci.com) and confirm build ✅ → test ✅ → publish ✅
 2. Confirm your Docker Hub has a `devops-demo:latest` image published
-3. Create a Railway account if you don't already have one — go to [https://railway.app](https://railway.app) and sign up with GitHub
+3. Make sure you can log in to the cloud platform you used in Lesson 4.10 — [Render](https://render.com) or [Railway](https://railway.app). If you don't have an account yet, sign up with GitHub
 4. Have your Docker Hub username and password ready
 
 Coming to class prepared will allow you to focus on the CD automation rather than setup.
 
 **Guiding Questions:**
-1. What is a Railway API token and why do we need it for automated deployment?
-2. Why should credentials like `RAILWAY_TOKEN` and `DOCKER_PASSWORD` never be hardcoded in config files?
+1. What is a deploy credential (for example, a Render deploy hook URL or a Railway project token) and why does CircleCI need one for automated deployment?
+2. Why should credentials like `RENDER_DEPLOY_HOOK_URL`, `RAILWAY_TOKEN` and `DOCKER_TOKEN` never be hardcoded in config files?
 3. In the CD pipeline we are building — build → test → publish → deploy — what happens if the test job fails?
 
 ---
@@ -73,5 +73,6 @@ Coming to class prepared will allow you to focus on the CD automation rather tha
 
 - [What is Continuous Deployment? — Atlassian](https://www.atlassian.com/continuous-delivery/continuous-deployment)
 - [CI/CD Explained — Red Hat](https://www.redhat.com/en/topics/devops/what-is-ci-cd)
+- [Render - Deploy Hooks](https://render.com/docs/deploy-hooks)
 - [Railway Documentation](https://docs.railway.app/)
 - [Railway CLI Reference](https://docs.railway.app/develop/cli)

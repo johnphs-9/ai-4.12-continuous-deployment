@@ -2,59 +2,41 @@
 
 ## Brief
 
-Implement a complete CI/CD pipeline with automated deployment to Railway for your Spring Boot application.
+Implement a complete CI/CD pipeline with automated deployment to a cloud platform (Render or Railway) for your Spring Boot application.
 
-1. **Set Up Railway and Deploy Manually**
-   - Create a Railway account at https://railway.app (sign up with GitHub)
-   - Add your credit card (required for free tier, $5/month credit)
-   - Create a new Railway project by deploying from GitHub:
-     - Select "Deploy from GitHub repo"
-     - Choose your devops-demo repository
-     - Railway will detect your Dockerfile and build automatically
-   - Claim the project to make it permanent
-   - Generate a public domain for your service:
-     - Go to Settings → Networking
-     - Click "Generate Domain"
-     - Set port to 8080
-   - Test your application by accessing: `https://your-railway-url.up.railway.app/hello`
-   - Take a screenshot showing your application running on Railway
+Use the same platform as in class, and follow its guide for the clicks and the exact `deploy` job: [render.md](./render.md) or [railway.md](./railway.md).
+
+1. **Run Your Docker Hub Image on the Platform**
+   - Make sure your devops-demo CircleCI pipeline is green (build → test → publish) and `YOUR_DOCKERHUB_USERNAME/devops-demo:latest` is in a **public** Docker Hub repository
+   - Create a service on the platform from the **Docker image** (not from your GitHub repository), with traffic going to port `8080`
+   - Give the service a public URL
+   - Test your application: `https://YOUR-SERVICE-URL/hello`
+   - Take a screenshot showing your application running on the platform
 
 2. **Configure Automated Deployment with CircleCI**
-   - Get Railway credentials:
-     - API Token: Account Settings → Tokens → Create Token
-     - Project ID: Project Settings → Copy Project ID
-     - Service ID: Service Settings → Copy Service ID
-   - Add environment variables to CircleCI:
-     - Go to Project Settings → Environment Variables
-     - Add `RAILWAY_TOKEN` with your API token
-     - Add `RAILWAY_PROJECT_ID` with your project ID
-     - Add `RAILWAY_SERVICE_ID` with your service ID
-   - Update your `.circleci/config.yml` to add a deploy job:
-     - Use `cimg/base:stable` Docker image
-     - Install Railway CLI with: `curl -fsSL https://railway.app/install.sh | sh`
-     - Set PATH to include Railway CLI: `export PATH="/root/.railway/bin:$PATH"`
-     - Login with: `railway login --browserless`
-     - Link to project: `railway link $RAILWAY_PROJECT_ID`
-     - Trigger deployment: `railway up --service $RAILWAY_SERVICE_ID`
-   - Update your workflow to run deploy after publish succeeds
+   - Get your platform's deploy credential:
+     - **Render:** the service's deploy hook URL
+     - **Railway:** a project token and the service ID
+   - Add it to CircleCI as project environment variables (`RENDER_DEPLOY_HOOK_URL`, or `RAILWAY_TOKEN` and `RAILWAY_SERVICE_ID`) - never in `config.yml`
+   - Add a `deploy` job to `.circleci/config.yml` that asks the platform to redeploy the service
+   - Update your workflow so `deploy` runs only after `publish` succeeds
    - Commit and push your updated config.yml
    - Watch the complete pipeline run: build → test → publish → deploy
-   - Verify all four jobs pass in CircleCI
-   - Check Railway dashboard to see the deployment triggered
+   - Verify all four jobs pass in CircleCI, and that a new deployment started on the platform
 
 3. **Test the Full CI/CD Pipeline**
    - Make a small change to your DemoController (update the /hello message)
    - Update your test to match the new message
    - Commit and push the change
    - Watch the automated pipeline:
-     - CircleCI builds, tests, publishes Docker image
-     - CircleCI triggers Railway deployment
-     - Railway pulls latest code and redeploys
-   - Verify the change appears on your live Railway URL
+     - CircleCI builds, tests and publishes the Docker image
+     - CircleCI triggers the deployment
+     - The platform pulls the new image and redeploys
+   - Verify the change appears on your live URL
    - Take screenshots showing:
      - CircleCI pipeline with all 4 jobs passing
-     - Railway deployment logs
-     - Your updated message live on Railway
+     - The platform's deployment logs
+     - Your updated message live on the platform
    - Write a brief report (4-5 sentences) explaining:
      - The complete flow from code push to production
      - How long the deployment took
@@ -69,5 +51,5 @@ Implement a complete CI/CD pipeline with automated deployment to Railway for you
 ## References
 - Java: https://docs.oracle.com/javase/
 - Spring Boot: https://docs.spring.io/spring-boot/docs/current/reference/html/
-- PostgreSQL: https://www.postgresql.org/docs/
-- OWASP: https://cheatsheetseries.owasp.org/
+- Render deploy hooks: https://render.com/docs/deploy-hooks
+- Railway CLI: https://docs.railway.com/cli/deploying
