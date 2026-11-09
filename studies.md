@@ -51,13 +51,14 @@ No video for this task. Complete the following before class to save time during 
 2. Confirm your Docker Hub has a `devops-demo:latest` image published
 3. Make sure you can log in to the cloud platform you used in Lesson 4.10 — [Render](https://render.com) or [Railway](https://railway.app). If you don't have an account yet, sign up with GitHub
 4. Have your Docker Hub username and password ready
+5. Create a free [Discord](https://discord.com) account if you don't have one - CircleCI will post your deployment results to a Discord channel
 
 Coming to class prepared will allow you to focus on the CD automation rather than setup.
 
 **Guiding Questions:**
-1. What is a deploy credential (for example, a Render deploy hook URL or a Railway project token) and why does CircleCI need one for automated deployment?
-2. Why should credentials like `RENDER_DEPLOY_HOOK_URL`, `RAILWAY_TOKEN` and `DOCKER_TOKEN` never be hardcoded in config files?
-3. In the CD pipeline we are building — build → test → publish → deploy — what happens if the test job fails?
+1. What is a deploy credential (for example, a Render API key or a Railway project token) and why does CircleCI need one for automated deployment?
+2. Why should credentials like `RENDER_API_KEY`, `RAILWAY_TOKEN`, `DISCORD_WEBHOOK_URL` and `DOCKER_TOKEN` never be hardcoded in config files?
+3. In the CD pipeline we are building — build → test → publish → deploy → notify — what happens if the test job fails? What happens if the deploy job fails?
 
 ---
 
@@ -73,6 +74,7 @@ Coming to class prepared will allow you to focus on the CD automation rather tha
 
 - [What is Continuous Deployment? — Atlassian](https://www.atlassian.com/continuous-delivery/continuous-deployment)
 - [CI/CD Explained — Red Hat](https://www.redhat.com/en/topics/devops/what-is-ci-cd)
-- [Render - Deploy Hooks](https://render.com/docs/deploy-hooks)
+- [The Render CLI](https://render.com/docs/cli)
+- [Discord - Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
 - [Railway Documentation](https://docs.railway.app/)
 - [Railway CLI Reference](https://docs.railway.app/develop/cli)

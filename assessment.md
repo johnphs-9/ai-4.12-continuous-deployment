@@ -84,7 +84,7 @@ B - False
 
 ---
 
-Q9: What is the primary benefit of storing deploy credentials (such as a Railway token or a Render deploy hook URL) in CircleCI environment variables?
+Q9: What is the primary benefit of storing deploy credentials (such as a Railway project token or a Render API key) in CircleCI environment variables?
 
 A - Faster deployment
 
@@ -100,11 +100,43 @@ Q10: When you push code to GitHub, a complete CI/CD pipeline with deployment to 
 
 A - 30-60 seconds
 
-B - 5-10 minutes
+B - About 10 minutes
 
-C - 10-15 minutes
+C - 30-45 minutes
 
-D - 30-45 minutes
+D - Several hours
+
+---
+
+Q11: In this lesson's workflow, when does the `notify-failure` job run?
+
+A - After every pipeline run
+
+B - Only when the deploy job fails
+
+C - Only when the test job fails
+
+D - Only when the deploy job succeeds
+
+---
+
+Q12: Why does the Render deploy job use `render deploys create` with `--wait`?
+
+A - To make the deploy faster
+
+B - So the job waits for Render's result and fails if the deployment fails - so the notify job reports the real outcome
+
+C - To build the Docker image on Render
+
+D - To skip the confirmation prompt
+
+---
+
+Q13: A Render API key gives access to every service in your Render account, so it must only be stored as a secret (for example, a CircleCI environment variable)?
+
+A - True
+
+B - False
 
 ## Notes
 - Keep each question atomic and aligned to the lesson objectives.

@@ -163,8 +163,10 @@ Then add the job to the workflow, as shown in lesson.md Part 3:
             - publish
 ```
 
+Next, add the `notify` job - it is the same for every platform: [lesson.md Part 3, Step 4](./lesson.md#step-4-notify-the-team-on-discord).
+
 <details>
-<summary>Complete <code>.circleci/config.yml</code> for Railway</summary>
+<summary>Complete <code>.circleci/config.yml</code> for Railway (with the notify job)</summary>
 
 ```yml
 version: 2.1
@@ -244,6 +246,28 @@ jobs:
             npx --yes @railway/cli redeploy --service "$RAILWAY_SERVICE_ID" --yes
             echo "Railway is now pulling $DOCKER_USERNAME/devops-demo:latest from Docker Hub."
 
+  notify:
+    parameters:
+      result:
+        type: enum
+        enum: ["success", "failed"]
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run:
+          name: Send the deployment result to Discord
+          command: |
+            if [ "<< parameters.result >>" = "success" ]; then
+              MESSAGE="✅ devops-demo deployed to production - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}"
+            else
+              MESSAGE="❌ devops-demo deployment FAILED - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}. Production is still running the previous version."
+            fi
+            curl --fail --silent --show-error \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": \"${MESSAGE}\"}" \
+              "$DISCORD_WEBHOOK_URL"
+            echo "Posted to Discord: ${MESSAGE}"
+
 workflows:
   build_test_publish_deploy:
     jobs:
@@ -258,13 +282,23 @@ workflows:
       - deploy:
           requires:
             - publish
+      - notify:
+          name: notify-success
+          result: success
+          requires:
+            - deploy: success
+      - notify:
+          name: notify-failure
+          result: failed
+          requires:
+            - deploy: failed
 ```
 
 </details>
 
 ### Step B5: Check the Deployment on Railway
 
-After you push (lesson.md Part 3, Step 4):
+After you push (lesson.md Part 3, Step 5):
 
 1. Open your Railway project → the **devops-demo** service → **"Deployments"** tab
 2. A new deployment starts just after the CircleCI `deploy` job

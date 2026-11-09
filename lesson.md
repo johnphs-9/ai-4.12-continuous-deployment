@@ -7,6 +7,7 @@ By the end of this lesson, you will be able to:
 2. **Deploy** a Docker image from Docker Hub to a cloud platform (such as Render or Railway)
 3. **Configure** CircleCI to automatically deploy applications after successful tests
 4. **Implement** a complete CI/CD pipeline from code push to production
+5. **Notify** the team on Discord whether each deployment succeeded or failed
 
 ---
 
@@ -18,6 +19,7 @@ Before starting this lesson, ensure you have:
 - Your **devops-demo** GitHub repository from Lesson 4.7, connected to CircleCI
 - Docker Hub account with your `devops-demo:latest` image published (public repository)
 - CircleCI pipeline showing build ✅ → test ✅ → publish ✅
+- A Discord account (free) - you will create your own Discord server for the deployment notifications
 
 ---
 
@@ -31,6 +33,7 @@ In Lesson 4.7, you built a CI pipeline that automatically builds, tests, and pub
 - Code push → GitHub
 - CircleCI builds, tests, publishes
 - **CircleCI tells your cloud platform to deploy the new image** ← NEW!
+- **CircleCI tells your team on Discord whether the deployment succeeded** ← NEW!
 - Users access your live application
 
 **This is Continuous Deployment (CD)!**
@@ -346,20 +349,22 @@ Code Push → GitHub → CircleCI → Build → Test → Publish to Docker Hub �
 
 **What we want:**
 ```
-Code Push → GitHub → CircleCI → Build → Test → Publish → Deploy → LIVE!
+Code Push → GitHub → CircleCI → Build → Test → Publish → Deploy → LIVE! → Notify Discord
 ```
 
 ---
 
 ### How CircleCI Triggers the Platform
 
-CircleCI cannot "push" an image into the platform. Instead, a new **deploy** job runs after **publish** and tells the platform: *redeploy this service*. The platform then pulls the latest image from Docker Hub and replaces the running container.
+CircleCI cannot "push" an image into the platform. Instead, a new **deploy** job runs after **publish** and uses the **platform's CLI** (command-line tool) to tell the platform: *redeploy this service*. The platform then pulls the latest image from Docker Hub and replaces the running container.
 
 **How it works:**
 1. CircleCI builds, tests and publishes the new image to Docker Hub
-2. If everything passed, the **deploy** job calls the platform's deploy API
-3. The call is authenticated with a **secret** that only allows deploying - stored in CircleCI, never in your code
+2. If everything passed, the **deploy** job runs the platform's CLI to redeploy the service
+3. The CLI is authenticated with a **secret token** - stored in CircleCI, never in your code
 4. The platform pulls `devops-demo:latest` from Docker Hub and restarts the service
+5. The deploy job **waits for the result**: if the new version goes live, the job passes; if the deployment fails, the job fails
+6. A **notify** job posts the result - ✅ or ❌ - to your team's Discord channel
 
 If **build**, **test** or **publish** fails, the deploy job never runs - broken code never reaches production.
 
@@ -367,10 +372,15 @@ If **build**, **test** or **publish** fails, the deploy job never runs - broken 
 
 | | Render | Railway |
 |---|---|---|
-| Secret that allows the deploy | **Deploy hook URL** (the service's Settings) | **Project token** (project Settings → Tokens) |
-| Which service to deploy | Part of the hook URL | **Service ID** |
-| CircleCI environment variables | `RENDER_DEPLOY_HOOK_URL` | `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID` |
-| What the deploy job runs | `curl -X POST` to the hook URL | `railway redeploy` (Railway CLI) |
+| Tool the deploy job uses | **Render CLI** (`render`) | **Railway CLI** (`railway`) |
+| Secret that allows the deploy | **API key** (Account Settings → API Keys) | **Project token** (project Settings → Tokens) |
+| Which service to deploy | **Service ID** (`srv-...`) | **Service ID** |
+| CircleCI environment variables | `RENDER_API_KEY`, `RENDER_SERVICE_ID` | `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID` |
+| What the deploy job runs | `render deploys create --wait` | `railway redeploy` |
+
+> **Keep secrets small.** A Railway project token can only deploy to one project. A Render API key can manage **every** service in your Render account - treat it like your password, store it only in CircleCI, and revoke it if it ever leaks.
+
+<!-- INSTRUCTOR: `render deploys create --wait` exits non-zero when the Render deploy fails, so the deploy job (and the Discord message) shows the real result. `railway redeploy` has no documented wait flag (Railway CLI docs, 2026-11-10) - for Railway, a green deploy job means Railway accepted the redeploy, not that the new version is live. Confirm in a dry run. -->
 
 ---
 
@@ -378,7 +388,7 @@ If **build**, **test** or **publish** fails, the deploy job never runs - broken 
 
 Create (or copy) the secret CircleCI will use to trigger a deploy. **Copy it straight into CircleCI in the next step** - treat it like a password.
 
-➡️ **Render:** [render.md - Step B1](./render.md#step-b1-copy-the-deploy-hook-url) · **Railway:** [railway.md - Steps B1-B2](./railway.md#step-b1-create-a-railway-project-token)
+➡️ **Render:** [render.md - Steps B1-B2](./render.md#step-b1-create-a-render-api-key) · **Railway:** [railway.md - Steps B1-B2](./railway.md#step-b1-create-a-railway-project-token)
 
 ---
 
@@ -393,7 +403,7 @@ Create (or copy) the secret CircleCI will use to trigger a deploy. **Copy it str
 - Don't expose them in code or in Git
 - Easy to change if needed (for example, if a secret leaks and you regenerate it)
 
-➡️ **Render:** [render.md - Step B2](./render.md#step-b2-add-the-deploy-hook-to-circleci) · **Railway:** [railway.md - Step B3](./railway.md#step-b3-add-the-credentials-to-circleci)
+➡️ **Render:** [render.md - Step B3](./render.md#step-b3-add-the-credentials-to-circleci) · **Railway:** [railway.md - Step B3](./railway.md#step-b3-add-the-credentials-to-circleci)
 
 ---
 
@@ -487,25 +497,26 @@ workflows:
 
 **3.2: Add a Deploy Job**
 
-Add a new `deploy` job after the `publish` job. Every platform's deploy job has the same shape - only the command is different:
+Add a new `deploy` job after the `publish` job. Every platform's deploy job has the same shape - get the platform's CLI, then ask it to redeploy the service:
 
 ```yml
   deploy:
     docker:
-      - image: <a small image with the tool you need>
+      - image: <a small image that can run the platform's CLI>
     steps:
       - run:
           name: Redeploy latest image on <platform>
-          command: <ask the platform to redeploy the service>
+          command: <platform CLI> <redeploy the service>
 ```
 
 Copy the exact job for your platform:
 
-➡️ **Render:** [render.md - Step B3](./render.md#step-b3-add-the-deploy-job) · **Railway:** [railway.md - Step B4](./railway.md#step-b4-add-the-deploy-job)
+➡️ **Render:** [render.md - Step B4](./render.md#step-b4-add-the-deploy-job) · **Railway:** [railway.md - Step B4](./railway.md#step-b4-add-the-deploy-job)
 
 **Notice what the deploy job does NOT need:**
 - No `checkout` - nothing is built or uploaded, so the source code isn't needed
 - No passwords in the file - the secret comes from the CircleCI environment variables
+- No interactive login - the CLI reads its token from an environment variable
 
 **3.3: Update the Workflow**
 
@@ -530,15 +541,125 @@ workflows:
 
 **Flow:** build → test → publish → deploy
 
+---
+
+### Step 4: Notify the Team on Discord
+
+With continuous deployment, production changes **without anyone clicking a button** - so the team needs to hear about every deployment, good or bad. This is the **post-deployment** stage of the CD pipeline from Part 1.
+
+CircleCI can post to Discord with a **webhook**: a secret URL that lets anyone who has it post messages to one Discord channel. No Discord app, bot or login is needed - just one HTTP request with `curl`.
+
+**4.1: Create a Discord server and webhook**
+
+1. Open Discord (app or [https://discord.com/app](https://discord.com/app))
+2. In the server list on the left, click **"+"** (Add a Server) → **"Create My Own"** → **"For me and my friends"**
+3. Name it `devops-demo` and click **"Create"**
+4. Open **Server Settings** (click the server name → **"Server Settings"**) → **"Integrations"** → **"Webhooks"** → **"New Webhook"**
+5. Click the new webhook and set:
+   - **Name:** `CircleCI`
+   - **Channel:** `#general`
+6. Click **"Copy Webhook URL"**. It looks like:
+   ```
+   https://discord.com/api/webhooks/1234567890/xxxxxxxxxxxx
+   ```
+
+**Treat this URL like a password.** Anyone who has it can post to your channel. If it leaks, delete the webhook in Discord and create a new one.
+
+<!-- INSTRUCTOR: option - create one class server/channel webhook and give it to students (everyone's deployments appear in one channel). The URL is then shared by the whole class: delete the webhook after the lesson. -->
+
+**4.2: Add the webhook URL to CircleCI**
+
+In your devops-demo project → **"Project Settings"** → **"Environment Variables"**, add:
+
+| Name | Value |
+|---|---|
+| `DISCORD_WEBHOOK_URL` | Your webhook URL from 4.1 |
+
+**4.3: Add a Notify Job**
+
+Add this `notify` job to `.circleci/config.yml`, after the `deploy` job:
+
+```yml
+  # ==========================================
+  # NOTIFY JOB - Post the deployment result to Discord
+  # ==========================================
+  notify:
+    parameters:
+      result:
+        type: enum
+        enum: ["success", "failed"]
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run:
+          name: Send the deployment result to Discord
+          command: |
+            if [ "<< parameters.result >>" = "success" ]; then
+              MESSAGE="✅ devops-demo deployed to production - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}"
+            else
+              MESSAGE="❌ devops-demo deployment FAILED - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}. Production is still running the previous version."
+            fi
+            curl --fail --silent --show-error \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": \"${MESSAGE}\"}" \
+              "$DISCORD_WEBHOOK_URL"
+            echo "Posted to Discord: ${MESSAGE}"
+```
+
+**What this does:**
+1. `parameters` gives the job an input called `result` - either `success` or `failed`. You write the job **once** and use it **twice** in the workflow (next step)
+2. CircleCI replaces `<< parameters.result >>` with the value before the script runs, so the script picks the ✅ or ❌ message
+3. `CIRCLE_SHA1` (the commit) and `CIRCLE_USERNAME` (who pushed) are built-in CircleCI environment variables. `${CIRCLE_SHA1:0:7}` keeps the first 7 characters, like GitHub's short commit IDs
+4. Discord webhooks accept a JSON body with a `content` field - the message text
+5. `--fail` makes the job fail if Discord rejects the call (for example a deleted webhook returns `404`)
+
+**4.4: Update the Workflow**
+
+A job normally runs only if the jobs it `requires` **succeed**. CircleCI also lets a job require a specific **status**: `success`, `failed` or `canceled`. Use that to run the notify job once for each outcome:
+
+```yml
+workflows:
+  build_test_publish_deploy:
+    jobs:
+      - build
+      - test:
+          requires:
+            - build
+      - publish:
+          context: docker-hub
+          requires:
+            - test
+      - deploy:
+          requires:
+            - publish
+      - notify:
+          name: notify-success
+          result: success
+          requires:
+            - deploy: success
+      - notify:
+          name: notify-failure
+          result: failed
+          requires:
+            - deploy: failed
+```
+
+**What happens:**
+- **Deploy passes** → `notify-success` runs and posts ✅. `notify-failure` is **not run** - that's expected
+- **Deploy fails** → `notify-failure` runs and posts ❌. The workflow is still red, because the deployment really failed
+- **Build, test or publish fails** → deploy never runs, so **neither** notify job runs - nothing was deployed, so there is nothing to announce
+
+**Flow:** build → test → publish → deploy → notify
+
 Your platform guide has the complete `config.yml` if you want to compare.
 
 ---
 
-### Step 4: Commit and Push Changes
+### Step 5: Commit and Push Changes
 
 ```bash
 git add .circleci/config.yml
-git commit -m "Add CD: deploy automatically after publish"
+git commit -m "Add CD: deploy with the platform CLI and notify Discord"
 git push origin main
 ```
 
@@ -550,36 +671,48 @@ git push origin main
    - ⏳ build (compiling...)
    - ⏳ test (running tests...)
    - ⏳ publish (pushing to Docker Hub...)
-   - ⏳ deploy (asking the platform to redeploy...)
+   - ⏳ deploy (asking the platform to redeploy and waiting for the result...)
+   - ⏳ notify-success (posting to Discord...)
 
 **Timeline:**
 - Build: ~2-3 minutes
 - Test: ~2 minutes
 - Publish: ~2-3 minutes
-- Deploy job: < 1 minute (one API call)
-- **Platform deployment:** ~1-2 minutes (pull image and start - no build)
+- Deploy job: ~2-3 minutes (get the CLI, then the platform pulls the image and starts it - no build)
+- Notify: a few seconds
 
-**Total:** ~7-10 minutes from push to production!
+**Total:** ~8-11 minutes from push to production!
 
 ---
 
-### Step 5: Verify Deployment
+### Step 6: Verify Deployment
 
-**5.1: Check CircleCI**
+**6.1: Check CircleCI**
 
-All 4 jobs should be green ✅:
+These jobs should be green ✅:
 - build ✅
 - test ✅
 - publish ✅
 - deploy ✅
+- notify-success ✅
 
-**5.2: Check the platform**
+`notify-failure` shows as **not run** - it only runs when the deployment fails.
 
-A new deployment starts just after the CircleCI deploy job. Open its logs - the image is **pulled**, not built.
+**6.2: Check the platform**
+
+A new deployment starts while the CircleCI deploy job is running. Open its logs - the image is **pulled**, not built.
 
 ➡️ **Render:** [render.md - Step B4](./render.md#step-b4-check-the-deployment-on-render) · **Railway:** [railway.md - Step B5](./railway.md#step-b5-check-the-deployment-on-railway)
 
-**5.3: Test Your Application**
+**6.3: Check Discord**
+
+Your `#general` channel shows a message from **CircleCI**:
+
+```
+✅ devops-demo deployed to production - commit a1b2c3d by your-github-username
+```
+
+**6.4: Test Your Application**
 
 Once the new deployment is live:
 
@@ -592,7 +725,7 @@ curl https://YOUR-SERVICE-URL/hello
 DevOps demo application is running!
 ```
 
-**Success! You have full CI/CD automation!** 🎉
+**Success! You have full CI/CD automation - with notifications!** 🎉
 
 ---
 
@@ -631,7 +764,7 @@ git push origin main
 
 **In CircleCI:**
 1. Pipeline triggers automatically
-2. build → test → publish → deploy
+2. build → test → publish → deploy → notify-success
 3. All jobs complete successfully
 
 **On your platform:**
@@ -639,7 +772,9 @@ git push origin main
 2. Pulls the new image from Docker Hub
 3. Replaces the running container with the new version
 
-**Timeline:** ~7-10 minutes total
+**In Discord:** a ✅ message with your new commit ID
+
+**Timeline:** ~8-11 minutes total
 
 ---
 
@@ -655,6 +790,20 @@ DevOps demo - AUTOMATED DEPLOYMENT WORKS! 🚀
 ```
 
 **🎉 Congratulations!** You just deployed to production by pushing code!
+
+---
+
+### Step 5: Test the Failure Path
+
+A notification you have never seen fail is a notification you can't trust. Break the deployment on purpose:
+
+1. In CircleCI → **Project Settings** → **Environment Variables**, delete your service ID variable (`RENDER_SERVICE_ID` or `RAILWAY_SERVICE_ID`) and add it again with the value `wrong-id`
+2. In CircleCI, open your last pipeline and click **"Rerun"** → **"Rerun workflow from start"**
+3. Watch: build ✅ → test ✅ → publish ✅ → deploy ❌ → **notify-failure** ✅
+4. Discord shows: **❌ devops-demo deployment FAILED ...**
+5. Your live URL still returns the message from Step 4 - a failed deploy doesn't take production down
+
+**Fix it:** put the correct service ID back and rerun the workflow. You should get a ✅ message again.
 
 ---
 
@@ -691,8 +840,10 @@ Publish Job:
 **3. Continuous Deployment (CircleCI → Cloud platform)**
 ```
 Deploy Job:
-  - Read the deploy secret from CircleCI environment variables
+  - Get the platform's CLI
+  - The CLI reads the deploy secret from CircleCI environment variables
   - Ask the platform to redeploy the devops-demo service
+  - Wait for the result - pass if it is live, fail if it isn't
 
 Cloud platform:
   - Pull the new image from Docker Hub (no build - CI already built it)
@@ -701,13 +852,20 @@ Cloud platform:
   - Route traffic to new version
 ```
 
-**4. Production (Cloud platform)**
+**4. Notification (CircleCI → Discord)**
+```
+Notify Job (notify-success OR notify-failure):
+  - Runs only for the matching deploy result
+  - Posts ✅ or ❌ with the commit and author to Discord
+```
+
+**5. Production (Cloud platform)**
 ```
 Users access: https://YOUR-SERVICE-URL
 They see your latest changes!
 ```
 
-**Total time:** ~7-10 minutes from code push to production!
+**Total time:** ~8-11 minutes from code push to production!
 
 ---
 
@@ -723,6 +881,8 @@ They see your latest changes!
 
 **5. Environment Variables** — Credentials secure, different configs for different environments
 
+**6. Fast Feedback** — The team hears about every deployment, successful or failed, within seconds
+
 ---
 
 ## Troubleshooting Guide
@@ -736,6 +896,10 @@ They see your latest changes!
 | URL doesn't respond / `/hello` returns 404 | Wrong port, or the app didn't start | Logs show "Started DevopsDemoApplication"; traffic goes to port `8080` (Render: free service may be asleep - wait a minute) |
 | Platform deploys on every push, even when tests fail | The service is connected to your **GitHub repository**, not the Docker image | Use a service created from the Docker image - only CircleCI should trigger deployments |
 | CircleCI pipeline doesn't trigger | Webhook or branch problem | GitHub repo → Settings → Webhooks has CircleCI; you pushed to `main`; trigger the pipeline manually to test |
+| Notify job fails with `401` or `404` | The Discord webhook URL is wrong, or the webhook was deleted | Copy the webhook URL from Discord again; `DISCORD_WEBHOOK_URL` in CircleCI matches exactly |
+| Notify job fails with `400` | The JSON body is broken - often a `"` typed inside `MESSAGE` | Keep double quotes out of the message text; compare the `curl -d` line with the lesson |
+| Neither notify job ran | Deploy didn't run (an earlier job failed), or the workflow wasn't updated | Fix the failed job first; the workflow has both `notify-success` and `notify-failure` entries |
+| `notify-failure` ran | The deploy job failed | Open the deploy job's logs in CircleCI, then the platform's deploy logs |
 
 Your platform guide has the exact fixes: [render.md - Troubleshooting](./render.md#troubleshooting) · [railway.md - Troubleshooting](./railway.md#troubleshooting)
 
@@ -746,10 +910,11 @@ Your platform guide has the exact fixes: [render.md - Troubleshooting](./render.
 ### What You Accomplished Today
 
 1. ✅ Deployed your Docker Hub image to a cloud platform
-2. ✅ Created complete CI/CD pipeline (build → test → publish → deploy)
-3. ✅ Automated deployment with a secret deploy credential stored in CircleCI
-4. ✅ Tested full pipeline with code changes
-5. ✅ Learned professional DevOps practices
+2. ✅ Created complete CI/CD pipeline (build → test → publish → deploy → notify)
+3. ✅ Automated deployment with the platform's CLI and a secret token stored in CircleCI
+4. ✅ Sent deployment results to Discord - ✅ on success, ❌ on failure
+5. ✅ Tested the full pipeline with a code change, and the failure path with a broken deploy
+6. ✅ Learned professional DevOps practices
 
 ---
 
@@ -760,5 +925,7 @@ Your platform guide has the exact fixes: [render.md - Troubleshooting](./render.
 - [CI/CD Explained — Red Hat](https://www.redhat.com/en/topics/devops/what-is-ci-cd)
 - [CircleCI Deployment Overview](https://circleci.com/docs/deployment-overview/)
 - [CircleCI Environment Variables](https://circleci.com/docs/env-vars/)
+- [CircleCI Workflows - requiring a job status](https://circleci.com/docs/guides/orchestrate/workflows/)
+- [Discord - Intro to Webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks)
 - [CircleCI Status](https://status.circleci.com/)
 - Platform docs: see the **Resources** section of [render.md](./render.md#resources) or [railway.md](./railway.md#resources)

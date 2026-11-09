@@ -1,9 +1,9 @@
 # Continuous Deployment to Render
 
-Step-by-step instructions for **Lesson 4.12, Parts 2 and 3** on [Render](https://render.com). Read the matching part of [lesson.md](./lesson.md) first (it explains what you are doing and why), then come here for the clicks and the exact `deploy` job.
+Step-by-step instructions for **Lesson 4.12, Parts 2 and 3** on [Render](https://render.com). Read the matching part of [lesson.md](./lesson.md) first (it explains what you are doing and why), then come here for the clicks and the exact `deploy` job. The `notify` job (Discord) is the same for every platform, so it is in lesson.md.
 
 - **Part A** - Run your Docker Hub image on Render (lesson.md Part 2)
-- **Part B** - Let CircleCI deploy to Render (lesson.md Part 3)
+- **Part B** - Let CircleCI deploy to Render with the Render CLI (lesson.md Part 3)
 
 > Using Railway instead? Follow [railway.md](./railway.md).
 
@@ -85,69 +85,97 @@ You should see: **"DevOps demo application is running!"** ✅ Go back to [lesson
 
 ## Part B - Let CircleCI Deploy to Render
 
-**How it works:** every Render service has a secret **deploy hook URL**. Sending a request to it tells Render *deploy this service now*. A new `deploy` job runs after `publish` and calls the hook with `curl`. Render then pulls the image from Docker Hub again - Render pulls the image on **every** deploy - so it gets the new `latest` that `publish` just pushed.
+**How it works:** a new `deploy` job runs after `publish` and uses the **Render CLI** (`render`) to tell Render *deploy this service now*. Render pulls the image from Docker Hub again - Render pulls the image on **every** deploy - so it gets the new `latest` that `publish` just pushed.
+
+The CLI's `--wait` option makes the deploy job **wait until Render reports the result**: the job passes when the new version is live and fails when the deploy fails. That's what lets the `notify` job (lesson.md Part 3, Step 4) tell Discord whether the deployment really worked.
 
 | What CircleCI needs | Where it comes from | CircleCI variable |
 |---|---|---|
-| The **deploy hook URL** - permission to deploy *and* which service | The service's **Settings** | `RENDER_DEPLOY_HOOK_URL` |
+| An **API key** - permission to use your Render account | **Account Settings → API Keys** | `RENDER_API_KEY` |
+| The **service ID** - which service to deploy | Your service's page | `RENDER_SERVICE_ID` |
 
-> **Why not just wait for Render?** Render does **not** watch Docker Hub. Pushing a new `latest` image doesn't change anything on Render until something asks it to deploy - that's the job of the deploy hook.
+> **Why not just wait for Render?** Render does **not** watch Docker Hub. Pushing a new `latest` image doesn't change anything on Render until something asks it to deploy - that's the job of the CLI.
 
-### Step B1: Copy the Deploy Hook URL
+### Step B1: Create a Render API Key
+
+1. In the Render Dashboard, click your avatar (top right) → **"Account Settings"**
+2. Scroll to **API Keys** and click **"Create API Key"**
+3. **Name:** `CircleCI devops-demo`
+4. **Copy the key** - it is shown in full only once!
+
+**Treat this key like your password.** An API key can do almost anything **you** can do in Render - deploy, change or delete **any** of your services. Never put it in `config.yml` or in Git. If it leaks, revoke it in **Account Settings → API Keys** and create a new one.
+
+<!-- INSTRUCTOR: Render docs (2026-11-10) list workspace-scoped API keys as early access. Standard keys act as the account - mention least privilege (compare Railway's project token). Delete the key after the course. -->
+
+### Step B2: Copy Your Service ID
 
 1. Open your **devops-demo** web service
-2. Click **"Settings"**
-3. Find **Deploy Hook** and copy the URL. It looks like:
+2. Look at the browser's address bar:
    ```
-   https://api.render.com/deploy/srv-xxxxxxxxxxxx?key=yyyyyyyyyyyy
+   https://dashboard.render.com/web/srv-xxxxxxxxxxxxxxxxxxxx
    ```
+3. Copy the part that starts with **`srv-`** - that's your service ID
 
-**Treat this URL like a password.** Anyone who has it can deploy your service. Never put it in `config.yml` or in Git. If it leaks, click **"Regenerate Hook"** and update CircleCI.
+The service ID is not a secret on its own, but keeping it in CircleCI means `config.yml` works for everyone without edits.
 
-### Step B2: Add the Deploy Hook to CircleCI
+### Step B3: Add the Credentials to CircleCI
 
 1. Open [https://app.circleci.com](https://app.circleci.com) → your devops-demo project
 2. Click **"Project Settings"** → **"Environment Variables"**
-3. Click **"Add Environment Variable"**:
+3. Click **"Add Environment Variable"** twice:
 
 | Name | Value |
 |---|---|
-| `RENDER_DEPLOY_HOOK_URL` | Your deploy hook URL from Step B1 |
+| `RENDER_API_KEY` | Your API key from Step B1 |
+| `RENDER_SERVICE_ID` | Your service ID from Step B2 (`srv-...`) |
 
-### Step B3: Add the Deploy Job
+**Why `RENDER_API_KEY`?** The Render CLI automatically looks for an API key in the `RENDER_API_KEY` environment variable - no `render login` needed.
+
+### Step B4: Add the Deploy Job
 
 Add this `deploy` job to `.circleci/config.yml`, after the `publish` job:
 
 ```yml
   # ==========================================
-  # DEPLOY JOB - Tell Render to redeploy
+  # DEPLOY JOB - Redeploy on Render with the Render CLI
   # ==========================================
   deploy:
     docker:
       - image: cimg/base:stable
+    environment:
+      RENDER_CLI_VERSION: "2.7.0"
     steps:
       - run:
-          name: Redeploy latest image on Render
+          name: Install the Render CLI
+          command: |
+            curl -fsSL -o /tmp/render.zip \
+              "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+            unzip -q /tmp/render.zip -d /tmp/render
+            sudo mv "/tmp/render/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+            render --version
+      - run:
+          name: Redeploy latest image on Render and wait
           command: |
             echo "Asking Render to redeploy the latest image..."
-            curl --fail --silent --show-error -X POST "$RENDER_DEPLOY_HOOK_URL"
-            echo ""
-            echo "Render is now pulling the latest devops-demo image from Docker Hub."
+            render deploys create "$RENDER_SERVICE_ID" --wait --confirm --output text
+            echo "The new version is live on Render."
 ```
 
-<!-- INSTRUCTOR: Render docs (deploy hooks, 2026-11-04): with no imgURL parameter the hook deploys the tag in the service settings, and Render pulls the image on every deploy - so this picks up the new :latest. A successful call returns 200 with {"deploy": {"id": "dep-..."}}. Dry-run once before class. -->
+<!-- INSTRUCTOR: CLI install follows Render's "Render CLI power user" tutorials (2026-11-10): release zip cli_<version>_linux_amd64.zip contains the binary cli_v<version>; v2.7.0 is the version the tutorials pin. Dry-run once before class: check the binary name in the zip, that no `render workspace set` is needed with RENDER_API_KEY, and that the deploy re-pulls the new :latest. -->
 
 **What this does:**
-1. Uses CircleCI's small `cimg/base` image, which already has `curl`
-2. `curl -X POST` calls your deploy hook. Render starts a new deploy and replies with the deploy's ID, e.g. `{"deploy":{"id":"dep-..."}}`
-3. `--fail` makes the job **fail** if Render rejects the call (for example a wrong or regenerated URL returns `401`) - without it, CircleCI would show green even though nothing was deployed
-4. `--silent --show-error` hides the progress bar but still prints errors
-5. Render pulls `devops-demo:latest` from Docker Hub and replaces the running container
+1. Uses CircleCI's small `cimg/base` image, which already has `curl` and `unzip`
+2. **Install the Render CLI:** downloads a **pinned** version of the CLI from Render's GitHub releases and puts it on the `PATH` as `render`. Pinning the version means a new CLI release can't break your pipeline overnight
+3. The CLI reads your API key from `RENDER_API_KEY`
+4. `render deploys create "$RENDER_SERVICE_ID"` starts a new deploy of your service. Render deploys the image in the service's settings - `devops-demo:latest` - and pulls it again from Docker Hub
+5. `--wait` keeps the job running until the deploy finishes. The CLI exits with `0` when the new version is **live**, and with a non-zero code when the deploy **fails** or the CLI can't run it (wrong API key or service ID) - so CircleCI shows the real result
+6. `--confirm` skips the "are you sure?" prompt - there is nobody to answer it in CI
+7. `--output text` prints plain log lines instead of the CLI's interactive view
 
 **Notice what the deploy job does NOT need:**
 - No `checkout` - nothing is built or uploaded, so the source code isn't needed
-- No Render CLI or login - the secret in the hook URL is enough
-- The URL is never printed - CircleCI also masks environment variables in its logs
+- No `render login` - the API key in `RENDER_API_KEY` is enough
+- The key is never printed - CircleCI also masks environment variables in its logs
 
 Then add the job to the workflow, as shown in lesson.md Part 3:
 
@@ -157,8 +185,10 @@ Then add the job to the workflow, as shown in lesson.md Part 3:
             - publish
 ```
 
+Next, add the `notify` job - it is the same for every platform: [lesson.md Part 3, Step 4](./lesson.md#step-4-notify-the-team-on-discord).
+
 <details>
-<summary>Complete <code>.circleci/config.yml</code> for Render</summary>
+<summary>Complete <code>.circleci/config.yml</code> for Render (with the notify job)</summary>
 
 ```yml
 version: 2.1
@@ -230,14 +260,45 @@ jobs:
   deploy:
     docker:
       - image: cimg/base:stable
+    environment:
+      RENDER_CLI_VERSION: "2.7.0"
     steps:
       - run:
-          name: Redeploy latest image on Render
+          name: Install the Render CLI
+          command: |
+            curl -fsSL -o /tmp/render.zip \
+              "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+            unzip -q /tmp/render.zip -d /tmp/render
+            sudo mv "/tmp/render/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+            render --version
+      - run:
+          name: Redeploy latest image on Render and wait
           command: |
             echo "Asking Render to redeploy the latest image..."
-            curl --fail --silent --show-error -X POST "$RENDER_DEPLOY_HOOK_URL"
-            echo ""
-            echo "Render is now pulling the latest devops-demo image from Docker Hub."
+            render deploys create "$RENDER_SERVICE_ID" --wait --confirm --output text
+            echo "The new version is live on Render."
+
+  notify:
+    parameters:
+      result:
+        type: enum
+        enum: ["success", "failed"]
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run:
+          name: Send the deployment result to Discord
+          command: |
+            if [ "<< parameters.result >>" = "success" ]; then
+              MESSAGE="✅ devops-demo deployed to production - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}"
+            else
+              MESSAGE="❌ devops-demo deployment FAILED - commit ${CIRCLE_SHA1:0:7} by ${CIRCLE_USERNAME}. Production is still running the previous version."
+            fi
+            curl --fail --silent --show-error \
+              -H "Content-Type: application/json" \
+              -d "{\"content\": \"${MESSAGE}\"}" \
+              "$DISCORD_WEBHOOK_URL"
+            echo "Posted to Discord: ${MESSAGE}"
 
 workflows:
   build_test_publish_deploy:
@@ -253,16 +314,26 @@ workflows:
       - deploy:
           requires:
             - publish
+      - notify:
+          name: notify-success
+          result: success
+          requires:
+            - deploy: success
+      - notify:
+          name: notify-failure
+          result: failed
+          requires:
+            - deploy: failed
 ```
 
 </details>
 
-### Step B4: Check the Deployment on Render
+### Step B5: Check the Deployment on Render
 
-After you push (lesson.md Part 3, Step 4):
+After you push (lesson.md Part 3, Step 5):
 
-1. Open the **devops-demo** web service on Render
-2. In **Events** (or **Deploys**), a new deploy starts just after the CircleCI `deploy` job
+1. In CircleCI, open the running **deploy** job - it stays running while Render deploys, and finishes when the new version is live
+2. On Render, open the **devops-demo** web service. In **Events** (or **Deploys**), a new deploy started while the CircleCI `deploy` job was running
 3. Open **Logs** - the image is pulled, not built
 4. Once Render shows the service is **live**, test your URL:
    ```bash
@@ -275,17 +346,24 @@ Go back to [lesson.md](./lesson.md) Part 3.
 
 ## Troubleshooting
 
-**Deploy job fails with `401`**
-- **Cause:** the `key` in the hook URL is wrong or missing - often because the hook was regenerated
-- **Solution:** copy the deploy hook URL from **Settings** again and update `RENDER_DEPLOY_HOOK_URL` in CircleCI (the whole URL, including `?key=...`, no extra spaces or quotes)
+**Deploy job fails in "Install the Render CLI" (`curl: (22) ... 404` or `mv: cannot stat`)**
+- **Cause:** the CLI version or file name doesn't match a release on GitHub
+- **Solution:** compare `RENDER_CLI_VERSION` and the URL with the job above; check the version exists at [github.com/render-oss/cli/releases](https://github.com/render-oss/cli/releases)
 
-**Deploy job fails with `404`**
-- **Cause:** the service in the URL doesn't exist - for example you deleted and recreated the service
-- **Solution:** copy the hook URL of your **current** devops-demo service
+**Deploy job fails with "unauthorized" or `401`**
+- **Cause:** `RENDER_API_KEY` is wrong, missing or was revoked
+- **Solution:** create a new API key (Step B1), delete `RENDER_API_KEY` in CircleCI and add it again - the whole key, no extra spaces or quotes
 
-**Deploy job fails with `curl: (3) URL using bad/illegal format or missing URL`**
-- **Cause:** `RENDER_DEPLOY_HOOK_URL` isn't set in CircleCI, or the name is misspelled
-- **Solution:** check **Project Settings → Environment Variables** - the name must match exactly
+**Deploy job fails with "not found" or `404`**
+- **Cause:** `RENDER_SERVICE_ID` is wrong - for example you deleted and recreated the service - or the API key belongs to a different Render account
+- **Solution:** copy the `srv-...` ID of your **current** devops-demo service (Step B2) and update CircleCI
+
+**Deploy job fails after Render reports the deploy failed (`update_failed`, `canceled`)**
+- **Cause:** CircleCI reached Render, but the new version didn't start on Render
+- **Solution:** open the deploy's **Logs** on Render (see "Image Pull Failed" and "no open ports detected" below). Your previous version keeps running, and `notify-failure` posts ❌ to Discord - that's the notification working as intended
+
+**Deploy job takes a few minutes**
+- That's expected: `--wait` keeps the job running until Render has pulled the image and the new version is live
 
 **"Image Pull Failed" on Render**
 1. Check the **Image URL** in **Settings** matches Docker Hub exactly: `docker.io/YOUR_DOCKERHUB_USERNAME/devops-demo:latest`
@@ -295,7 +373,7 @@ Go back to [lesson.md](./lesson.md) Part 3.
 **Deploy succeeds but the old version is still running**
 1. Check **publish** finished before **deploy** (the workflow has `requires: - publish`)
 2. On Docker Hub, check `latest` was updated at the time of your push
-3. On Render, check a new deploy started after the CircleCI deploy job and that it finished
+3. On Render, check a new deploy started during the CircleCI deploy job and that it finished
 4. Remember the free service may be asleep - give the first request about a minute
 
 **Deploy fails with "no open ports detected" or the URL doesn't respond**
@@ -303,7 +381,7 @@ Go back to [lesson.md](./lesson.md) Part 3.
 
 **Render deploys on every push, even when tests fail**
 - **Cause:** the service was created from your **GitHub repository** (Git Provider), not the Docker image - Render builds and deploys every push by itself
-- **Solution:** create a new web service from **Existing Image** (Step A2), update `RENDER_DEPLOY_HOOK_URL` with the new service's hook, and delete the Git-based service
+- **Solution:** create a new web service from **Existing Image** (Step A2), update `RENDER_SERVICE_ID` with the new service's ID, and delete the Git-based service
 
 Only CircleCI should trigger deployments.
 
@@ -312,6 +390,7 @@ Only CircleCI should trigger deployments.
 ## Resources
 
 - [Render - Deploy a Prebuilt Docker Image](https://render.com/docs/deploying-an-image)
-- [Render - Deploy Hooks](https://render.com/docs/deploy-hooks)
+- [The Render CLI](https://render.com/docs/cli)
+- [Render API keys](https://render.com/docs/api)
 - [Render - Deploy for Free](https://render.com/docs/free)
 - [Render Status](https://status.render.com/)
