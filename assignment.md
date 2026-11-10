@@ -18,7 +18,7 @@ Use the same platform as in class, and follow its guide for the clicks and the e
      - **Render:** an API key and the service ID (`srv-...`)
      - **Railway:** a project token and the service ID
    - Add them to CircleCI as project environment variables (`RENDER_API_KEY` and `RENDER_SERVICE_ID`, or `RAILWAY_TOKEN` and `RAILWAY_SERVICE_ID`) - never in `config.yml`
-   - Add a `deploy` job to `.circleci/config.yml` that uses the platform's CLI to redeploy the service (Render: `render deploys create --wait`)
+   - Add a `deploy` job to `.circleci/config.yml` that uses the platform's CLI to redeploy the service (Render: `render deploys create --image <your image> --wait`)
    - Update your workflow so `deploy` runs only after `publish` succeeds
 
 3. **Notify Discord**

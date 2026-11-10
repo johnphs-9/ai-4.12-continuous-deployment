@@ -376,7 +376,7 @@ If **build**, **test** or **publish** fails, the deploy job never runs - broken 
 | Secret that allows the deploy | **API key** (Account Settings → API Keys) | **Project token** (project Settings → Tokens) |
 | Which service to deploy | **Service ID** (`srv-...`) | **Service ID** |
 | CircleCI environment variables | `RENDER_API_KEY`, `RENDER_SERVICE_ID` | `RAILWAY_TOKEN`, `RAILWAY_SERVICE_ID` |
-| What the deploy job runs | `render deploys create --wait` | `railway redeploy` |
+| What the deploy job runs | `render deploys create --image <image> --wait` | `railway redeploy` |
 
 > **Keep secrets small.** A Railway project token can only deploy to one project. A Render API key can manage **every** service in your Render account - treat it like your password, store it only in CircleCI, and revoke it if it ever leaks.
 

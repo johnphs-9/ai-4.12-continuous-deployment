@@ -142,6 +142,8 @@ Add this `deploy` job to `.circleci/config.yml`, after the `publish` job:
   deploy:
     docker:
       - image: cimg/base:stable
+    environment:
+      IMAGE_URL: docker.io/YOUR_DOCKERHUB_USERNAME/devops-demo:latest
     steps:
       - run:
           name: Install the Render CLI
@@ -151,21 +153,24 @@ Add this `deploy` job to `.circleci/config.yml`, after the `publish` job:
       - run:
           name: Redeploy latest image on Render and wait
           command: |
-            echo "Asking Render to redeploy the latest image..."
-            render deploys create "$RENDER_SERVICE_ID" --wait --confirm --output text
+            echo "Asking Render to deploy $IMAGE_URL..."
+            render deploys create "$RENDER_SERVICE_ID" \
+              --image "$IMAGE_URL" \
+              --wait --confirm --output text
             echo "The new version is live on Render."
 ```
 
-<!-- INSTRUCTOR: install command from Render docs (2026-11-10). install.sh installs the latest release; as a non-root user (CircleCI's `circleci` user) it puts `render` in ~/.local/bin and does not change PATH - hence the $BASH_ENV line. It looks up the latest version through the GitHub API (unauthenticated), so a rate-limited GitHub can make the install step fail. Dry-run once before class: install step, that no `render workspace set` is needed with RENDER_API_KEY, and that the deploy re-pulls the new :latest. Lesson 4.13 can use this `curl | sh` line as an example of an unpinned tool. -->
+<!-- INSTRUCTOR: install command from Render docs (2026-11-10). install.sh installs the latest release; as a non-root user (CircleCI's `circleci` user) it puts `render` in ~/.local/bin and does not change PATH - hence the $BASH_ENV line. It looks up the latest version through the GitHub API (unauthenticated), so a rate-limited GitHub can make the install step fail. Dry-run once before class: install step, that no `render workspace set` is needed with RENDER_API_KEY, that `--image` re-pulls the new :latest, and whether deploying with `--image` also changes the Image URL saved in the service's settings. Why IMAGE_URL in config.yml rather than $DOCKER_USERNAME: DOCKER_USERNAME comes from the docker-hub context, and giving deploy that context would also hand it DOCKER_TOKEN (least privilege, Lesson 4.13). Option: publish also pushes a :$CIRCLE_SHA1 tag and deploy uses --image ...:$CIRCLE_SHA1 - every deploy then names one exact build. Lesson 4.13 can use this `curl | sh` line as an example of an unpinned tool. -->
 
 **What this does:**
 1. Uses CircleCI's small `cimg/base` image, which already has `curl` and `unzip` (the install script needs both)
 2. **Install the Render CLI:** runs Render's official install script, which downloads the latest CLI and saves it as `render` in `~/.local/bin`. The `$BASH_ENV` line adds that folder to the `PATH` for the **next** steps of the job (CircleCI reads `$BASH_ENV` at the start of every step)
-3. The CLI reads your API key from `RENDER_API_KEY`
-4. `render deploys create "$RENDER_SERVICE_ID"` starts a new deploy of your service. Render deploys the image in the service's settings - `devops-demo:latest` - and pulls it again from Docker Hub
-5. `--wait` keeps the job running until the deploy finishes. The CLI exits with `0` when the new version is **live**, and with a non-zero code when the deploy **fails** or the CLI can't run it (wrong API key or service ID) - so CircleCI shows the real result
-6. `--confirm` skips the "are you sure?" prompt - there is nobody to answer it in CI
-7. `--output text` prints plain log lines instead of the CLI's interactive view
+3. **`IMAGE_URL`** is the image to deploy - the one `publish` just pushed. **Replace `YOUR_DOCKERHUB_USERNAME`** with your Docker Hub username. It must be the same image as the **Image URL** in your Render service's settings. It's not a secret, so it can live in `config.yml`
+4. The CLI reads your API key from `RENDER_API_KEY`
+5. `render deploys create "$RENDER_SERVICE_ID"` starts a new deploy of your service, and `--image "$IMAGE_URL"` tells Render **exactly which image** to deploy. Render pulls it again from Docker Hub, so it gets the new `latest`
+6. `--wait` keeps the job running until the deploy finishes. The CLI exits with `0` when the new version is **live**, and with a non-zero code when the deploy **fails** or the CLI can't run it (wrong API key or service ID) - so CircleCI shows the real result
+7. `--confirm` skips the "are you sure?" prompt - there is nobody to answer it in CI
+8. `--output text` prints plain log lines instead of the CLI's interactive view
 
 **Notice what the deploy job does NOT need:**
 - No `checkout` - nothing is built or uploaded, so the source code isn't needed
@@ -255,6 +260,8 @@ jobs:
   deploy:
     docker:
       - image: cimg/base:stable
+    environment:
+      IMAGE_URL: docker.io/YOUR_DOCKERHUB_USERNAME/devops-demo:latest
     steps:
       - run:
           name: Install the Render CLI
@@ -264,8 +271,10 @@ jobs:
       - run:
           name: Redeploy latest image on Render and wait
           command: |
-            echo "Asking Render to redeploy the latest image..."
-            render deploys create "$RENDER_SERVICE_ID" --wait --confirm --output text
+            echo "Asking Render to deploy $IMAGE_URL..."
+            render deploys create "$RENDER_SERVICE_ID" \
+              --image "$IMAGE_URL" \
+              --wait --confirm --output text
             echo "The new version is live on Render."
 
   notify:
@@ -347,6 +356,10 @@ Go back to [lesson.md](./lesson.md) Part 3.
 **Deploy job fails with "unauthorized" or `401`**
 - **Cause:** `RENDER_API_KEY` is wrong, missing or was revoked
 - **Solution:** create a new API key (Step B1), delete `RENDER_API_KEY` in CircleCI and add it again - the whole key, no extra spaces or quotes
+
+**Deploy job fails with an image error, or Render can't pull the image**
+- **Cause:** `IMAGE_URL` still says `YOUR_DOCKERHUB_USERNAME`, or doesn't match your Docker Hub repository
+- **Solution:** set `IMAGE_URL` to `docker.io/<your Docker Hub username>/devops-demo:latest` - the same image as the **Image URL** in your Render service's settings
 
 **Deploy job fails with "not found" or `404`**
 - **Cause:** `RENDER_SERVICE_ID` is wrong - for example you deleted and recreated the service - or the API key belongs to a different Render account
