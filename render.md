@@ -142,17 +142,12 @@ Add this `deploy` job to `.circleci/config.yml`, after the `publish` job:
   deploy:
     docker:
       - image: cimg/base:stable
-    environment:
-      RENDER_CLI_VERSION: "2.7.0"
     steps:
       - run:
           name: Install the Render CLI
           command: |
-            curl -fsSL -o /tmp/render.zip \
-              "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
-            unzip -q /tmp/render.zip -d /tmp/render
-            sudo mv "/tmp/render/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
-            render --version
+            curl -fsSL https://raw.githubusercontent.com/render-oss/cli/refs/heads/main/bin/install.sh | sh
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Redeploy latest image on Render and wait
           command: |
@@ -161,11 +156,11 @@ Add this `deploy` job to `.circleci/config.yml`, after the `publish` job:
             echo "The new version is live on Render."
 ```
 
-<!-- INSTRUCTOR: CLI install follows Render's "Render CLI power user" tutorials (2026-11-10): release zip cli_<version>_linux_amd64.zip contains the binary cli_v<version>; v2.7.0 is the version the tutorials pin. Dry-run once before class: check the binary name in the zip, that no `render workspace set` is needed with RENDER_API_KEY, and that the deploy re-pulls the new :latest. -->
+<!-- INSTRUCTOR: install command from Render docs (2026-11-10). install.sh installs the latest release; as a non-root user (CircleCI's `circleci` user) it puts `render` in ~/.local/bin and does not change PATH - hence the $BASH_ENV line. It looks up the latest version through the GitHub API (unauthenticated), so a rate-limited GitHub can make the install step fail. Dry-run once before class: install step, that no `render workspace set` is needed with RENDER_API_KEY, and that the deploy re-pulls the new :latest. Lesson 4.13 can use this `curl | sh` line as an example of an unpinned tool. -->
 
 **What this does:**
-1. Uses CircleCI's small `cimg/base` image, which already has `curl` and `unzip`
-2. **Install the Render CLI:** downloads a **pinned** version of the CLI from Render's GitHub releases and puts it on the `PATH` as `render`. Pinning the version means a new CLI release can't break your pipeline overnight
+1. Uses CircleCI's small `cimg/base` image, which already has `curl` and `unzip` (the install script needs both)
+2. **Install the Render CLI:** runs Render's official install script, which downloads the latest CLI and saves it as `render` in `~/.local/bin`. The `$BASH_ENV` line adds that folder to the `PATH` for the **next** steps of the job (CircleCI reads `$BASH_ENV` at the start of every step)
 3. The CLI reads your API key from `RENDER_API_KEY`
 4. `render deploys create "$RENDER_SERVICE_ID"` starts a new deploy of your service. Render deploys the image in the service's settings - `devops-demo:latest` - and pulls it again from Docker Hub
 5. `--wait` keeps the job running until the deploy finishes. The CLI exits with `0` when the new version is **live**, and with a non-zero code when the deploy **fails** or the CLI can't run it (wrong API key or service ID) - so CircleCI shows the real result
@@ -260,17 +255,12 @@ jobs:
   deploy:
     docker:
       - image: cimg/base:stable
-    environment:
-      RENDER_CLI_VERSION: "2.7.0"
     steps:
       - run:
           name: Install the Render CLI
           command: |
-            curl -fsSL -o /tmp/render.zip \
-              "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
-            unzip -q /tmp/render.zip -d /tmp/render
-            sudo mv "/tmp/render/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
-            render --version
+            curl -fsSL https://raw.githubusercontent.com/render-oss/cli/refs/heads/main/bin/install.sh | sh
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$BASH_ENV"
       - run:
           name: Redeploy latest image on Render and wait
           command: |
@@ -346,9 +336,13 @@ Go back to [lesson.md](./lesson.md) Part 3.
 
 ## Troubleshooting
 
-**Deploy job fails in "Install the Render CLI" (`curl: (22) ... 404` or `mv: cannot stat`)**
-- **Cause:** the CLI version or file name doesn't match a release on GitHub
-- **Solution:** compare `RENDER_CLI_VERSION` and the URL with the job above; check the version exists at [github.com/render-oss/cli/releases](https://github.com/render-oss/cli/releases)
+**Deploy job fails in "Install the Render CLI"**
+- **Cause:** the install script couldn't reach GitHub (for example GitHub's API rate limit), or the URL was mistyped
+- **Solution:** compare the `curl` line with the job above, then click **"Rerun job"** in CircleCI - a temporary GitHub problem usually clears on its own
+
+**Deploy job fails with `render: command not found`**
+- **Cause:** the `echo 'export PATH=...' >> "$BASH_ENV"` line is missing, so the next step can't find `render` in `~/.local/bin`
+- **Solution:** add the line back to the install step, exactly as above
 
 **Deploy job fails with "unauthorized" or `401`**
 - **Cause:** `RENDER_API_KEY` is wrong, missing or was revoked
